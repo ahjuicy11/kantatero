@@ -148,45 +148,86 @@ function broadcastRoomState(roomCode: string) {
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    environment: process.env.NODE_ENV || 'development',
+    youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY),
+    analyticsConfigured: true,
+    time: new Date().toISOString(),
+  });
 });
 
 // Search YouTube Karaoke Tracks
 app.get('/api/search', async (req, res) => {
   try {
     const rawQuery = (req.query.q as string || '').trim();
+    const rawKey =
+      process.env.YOUTUBE_API_KEY ||
+      process.env.VITE_YOUTUBE_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.YOUTUBE_DATA_API_KEY ||
+      process.env.YT_API_KEY ||
+      '';
+    const apiKey = rawKey.trim().replace(/^["']|["']$/g, '').trim();
+
     if (!rawQuery) {
-      return res.json({ results: POPULAR_KARAOKE_SONGS.slice(0, 16) });
+      return res.json({
+        results: POPULAR_KARAOKE_SONGS.slice(0, 24),
+        source: 'curated_popular',
+        youtubeApiConfigured: Boolean(apiKey),
+      });
     }
 
     const searchQuery = rawQuery.toLowerCase().includes('karaoke')
       ? rawQuery
       : `${rawQuery} karaoke`;
 
-    const apiKey = process.env.YOUTUBE_API_KEY;
+    let apiErrorMessage: string | null = null;
 
     if (apiKey) {
-      const ytUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=${encodeURIComponent(
-        searchQuery
-      )}&type=video&videoEmbeddable=true&key=${apiKey}`;
+      try {
+        const ytUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=25&q=${encodeURIComponent(
+          searchQuery
+        )}&type=video&key=${apiKey}`;
 
-      const ytRes = await fetch(ytUrl);
-      if (ytRes.ok) {
-        const ytData: any = await ytRes.json();
-        const results = (ytData.items || []).map((item: any) => ({
-          video_id: item.id?.videoId,
-          title: item.snippet?.title?.replace(/&quot;/g, '"')?.replace(/&#39;/g, "'")?.replace(/&amp;/g, '&'),
-          channel_title: item.snippet?.channelTitle,
-          thumbnail_url:
-            item.snippet?.thumbnails?.high?.url ||
-            item.snippet?.thumbnails?.medium?.url ||
-            item.snippet?.thumbnails?.default?.url,
-          duration: '3:45',
-        })).filter((r: any) => r.video_id);
+        const ytRes = await fetch(ytUrl);
+        if (ytRes.ok) {
+          const ytData: any = await ytRes.json();
+          const results = (ytData.items || []).map((item: any) => ({
+            video_id: item.id?.videoId,
+            title: item.snippet?.title
+              ?.replace(/&quot;/g, '"')
+              ?.replace(/&#39;/g, "'")
+              ?.replace(/&apos;/g, "'")
+              ?.replace(/&amp;/g, '&')
+              ?.replace(/&lt;/g, '<')
+              ?.replace(/&gt;/g, '>'),
+            channel_title: item.snippet?.channelTitle || 'YouTube Karaoke',
+            thumbnail_url:
+              item.snippet?.thumbnails?.high?.url ||
+              item.snippet?.thumbnails?.medium?.url ||
+              item.snippet?.thumbnails?.default?.url ||
+              `https://img.youtube.com/vi/${item.id?.videoId}/hqdefault.jpg`,
+            duration: '3:45',
+          })).filter((r: any) => Boolean(r.video_id));
 
-        if (results.length > 0) {
-          return res.json({ results });
+          if (results.length > 0) {
+            return res.json({
+              results,
+              source: 'youtube_api_v3',
+              youtubeApiConfigured: true,
+              totalResults: ytData.pageInfo?.totalResults || results.length,
+            });
+          }
+        } else {
+          const errorJson: any = await ytRes.json().catch(() => ({}));
+          const rawErr = errorJson?.error?.message || `HTTP ${ytRes.status}`;
+          apiErrorMessage = `YouTube API notice: ${rawErr}`;
+          console.warn('YouTube Data API query failed in server:', apiErrorMessage);
         }
+      } catch (ytErr: any) {
+        apiErrorMessage = ytErr?.message || 'Failed to reach YouTube API';
+        console.error('YouTube API call error in server:', ytErr);
       }
     }
 
@@ -197,16 +238,20 @@ app.get('/api/search', async (req, res) => {
       return queryWords.every((word) => text.includes(word));
     });
 
-    // Fallback: If not found in curated list, generate clean YouTube formatted results
     if (filteredCurated.length > 0) {
-      return res.json({ results: filteredCurated });
+      return res.json({
+        results: filteredCurated,
+        source: 'curated_database',
+        youtubeApiConfigured: Boolean(apiKey),
+        apiError: apiErrorMessage,
+      });
     }
 
-    // Dynamic result generator matching the user query with high-probability karaoke video channels
+    // Fallback: If not found in curated list, generate clean playable results
     const formattedQuery = rawQuery.charAt(0).toUpperCase() + rawQuery.slice(1);
     const dynamicResults = [
       {
-        video_id: '8yvGCAvOAfM', // Playable fallback ID
+        video_id: '8yvGCAvOAfM',
         title: `${formattedQuery} - Sing King Karaoke Version`,
         channel_title: 'Sing King Karaoke',
         thumbnail_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&auto=format&fit=crop&q=80',
@@ -226,13 +271,21 @@ app.get('/api/search', async (req, res) => {
         thumbnail_url: 'https://images.unsplash.com/photo-1520523839898-507124cd5333?w=600&auto=format&fit=crop&q=80',
         duration: '3:30',
       },
-      ...POPULAR_KARAOKE_SONGS.slice(0, 5),
+      ...POPULAR_KARAOKE_SONGS.slice(0, 8),
     ];
 
-    return res.json({ results: dynamicResults });
+    return res.json({
+      results: dynamicResults,
+      source: 'fuzzy_fallback',
+      youtubeApiConfigured: Boolean(apiKey),
+      apiError: apiErrorMessage,
+    });
   } catch (err: any) {
     console.error('Search error:', err);
-    return res.json({ results: POPULAR_KARAOKE_SONGS.slice(0, 10) });
+    return res.json({
+      results: POPULAR_KARAOKE_SONGS.slice(0, 10),
+      source: 'error_fallback',
+    });
   }
 });
 
@@ -276,6 +329,75 @@ app.get('/api/rooms/:code', (req, res) => {
   const guests = getConnectedGuests(code);
   const currentTrack = queue.find((q) => q.status === 'playing') || null;
 
+  res.json({ room, queue, guests, currentTrack });
+});
+
+// Room Action (HTTP fallback for serverless or environments without WebSockets)
+app.post('/api/rooms/:code/action', (req, res) => {
+  const code = (req.params.code || '').toUpperCase();
+  const room = rooms.get(code);
+  const queue = roomQueues.get(code);
+  if (!room || !queue) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  const { type, track, status, queueItemId, queueItemIds, isPlaying, cheer, settings } = req.body || {};
+
+  if (type === 'add_to_queue' && track) {
+    const hasPlaying = queue.some((q) => q.status === 'playing');
+    const newStatus: 'playing' | 'queued' = !hasPlaying ? 'playing' : 'queued';
+    const newItem: QueueItem = {
+      id: `queue-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      room_code: code,
+      video_id: track.video_id,
+      title: track.title,
+      channel_title: track.channel_title,
+      thumbnail_url: track.thumbnail_url,
+      duration: track.duration || '3:45',
+      added_by: track.added_by || 'Singer',
+      status: newStatus,
+      created_at: new Date().toISOString(),
+    };
+    queue.push(newItem);
+    if (newStatus === 'playing') {
+      room.current_track_id = newItem.id;
+      room.is_playing = true;
+    }
+    broadcastRoomState(code);
+  } else if (type === 'skip_track') {
+    const current = queue.find((q) => q.status === 'playing');
+    if (current) current.status = 'played';
+    const next = queue.find((q) => q.status === 'queued');
+    if (next) {
+      next.status = 'playing';
+      room.current_track_id = next.id;
+      room.is_playing = true;
+    } else {
+      room.current_track_id = null;
+      room.is_playing = false;
+    }
+    broadcastRoomState(code);
+  } else if (type === 'play_pause') {
+    room.is_playing = Boolean(isPlaying);
+    broadcastToRoom(code, { type: 'player_command', command: isPlaying ? 'play' : 'pause' });
+    broadcastRoomState(code);
+  } else if (type === 'send_cheer' && cheer) {
+    const cheerEvent: CheerEvent = {
+      id: `cheer-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type: cheer.type || 'clap',
+      senderName: cheer.senderName || 'A fan',
+      timestamp: Date.now(),
+      x: cheer.x ?? Math.random() * 80 + 10,
+      y: cheer.y ?? Math.random() * 60 + 20,
+    };
+    broadcastToRoom(code, { type: 'cheer_received', cheer: cheerEvent });
+  } else if (type === 'update_settings' && settings) {
+    room.settings = { ...room.settings, ...settings };
+    broadcastRoomState(code);
+  }
+
+  const currentTrack = queue.find((q) => q.status === 'playing') || null;
+  const guests = getConnectedGuests(code);
   res.json({ room, queue, guests, currentTrack });
 });
 

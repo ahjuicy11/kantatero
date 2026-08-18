@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { QrCode, Copy, Check, Users, Trash2, Power, Sliders, Smartphone } from 'lucide-react';
+import { QrCode, Copy, Check, Users, Trash2, Power, Sliders, Smartphone, Activity, Youtube, BarChart2 } from 'lucide-react';
 import { RoomSettings, ConnectedGuest } from '../types';
 
 interface SettingsModalProps {
@@ -24,10 +24,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [copied, setCopied] = useState<boolean>(false);
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
   const [showEndConfirm, setShowEndConfirm] = useState<boolean>(false);
+  const [apiHealth, setApiHealth] = useState<{
+    status: string;
+    youtubeApiConfigured: boolean;
+    analyticsConfigured: boolean;
+  } | null>(null);
 
-  const remoteUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/remote/${roomCode}`
-    : `/remote/${roomCode}`;
+  const remoteUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/remote/${roomCode}`
+      : `/remote/${roomCode}`;
 
   useEffect(() => {
     QRCode.toDataURL(
@@ -46,6 +52,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
       }
     );
+
+    // Fetch API status
+    fetch('/api/health')
+      .then((res) => res.json())
+      .then((data) => setApiHealth(data))
+      .catch(() => setApiHealth({ status: 'ok', youtubeApiConfigured: false, analyticsConfigured: true }));
   }, [remoteUrl]);
 
   const handleCopyLink = () => {
@@ -107,7 +119,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </button>
       </div>
 
-      {/* 2. Playback & Guest Rules */}
+      {/* 2. Deployment & Integrations Status */}
+      <div className="space-y-2.5">
+        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 px-1">
+          <Activity className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Services & Integrations</span>
+        </h4>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          {/* YouTube API Status */}
+          <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Youtube className="w-4 h-4 text-red-400" />
+              <div>
+                <span className="font-semibold text-slate-200 block text-[11px]">YouTube API v3</span>
+                <span className="text-[9px] text-slate-500">
+                  {apiHealth?.youtubeApiConfigured ? 'Direct Search' : 'Curated + Auto-Search'}
+                </span>
+              </div>
+            </div>
+            <span
+              className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                apiHealth?.youtubeApiConfigured
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20'
+              }`}
+            >
+              {apiHealth?.youtubeApiConfigured ? 'API Active' : 'Smart Fallback'}
+            </span>
+          </div>
+
+          {/* Analytics Status */}
+          <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-purple-400" />
+              <div>
+                <span className="font-semibold text-slate-200 block text-[11px]">Analytics</span>
+                <span className="text-[9px] text-slate-500">Vercel & Speed Insights</span>
+              </div>
+            </div>
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              Enabled
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Playback & Guest Rules */}
       <div className="space-y-2.5">
         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 px-1">
           <Sliders className="w-3.5 h-3.5 text-indigo-400" />
@@ -177,7 +235,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
       </div>
 
-      {/* 3. Connected Singers */}
+      {/* 4. Connected Singers */}
       <div className="space-y-2.5">
         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 px-1">
           <Users className="w-3.5 h-3.5 text-indigo-400" />
@@ -206,7 +264,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         )}
       </div>
 
-      {/* 4. Danger Controls */}
+      {/* 5. Danger Controls */}
       <div className="pt-2 border-t border-white/5 space-y-2.5">
         <h4 className="text-xs font-bold text-red-400 uppercase tracking-widest px-1">Danger Zone</h4>
 
