@@ -1,0 +1,6 @@
+{
+  "name": "Kantatero",
+  "description": "A responsive, high-performance dark-themed YouTube karaoke web application with host TV display, real-time mobile remotes, live synchronized queue, dynamic QR code pairing, and instant song search.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
