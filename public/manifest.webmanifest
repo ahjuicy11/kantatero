@@ -1,0 +1,13 @@
+{
+  "name": "Kantatero Karaoke",
+  "short_name": "Karaoke",
+  "description": "Stream and reserve karaoke songs from YouTube.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090909",
+  "theme_color": "#090909",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
